@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>番茄钟 - Pomodoro</title>
+<style>
+/*
+ * ============================================================
+ * CSS 变量（设计令牌）
+ * 用 CSS 自定义属性统一管理颜色，方便后续扩展主题（如暗色模式）
+ * ============================================================
+ */
+:root {
+  --color-work: #e63946;        /* 工作中：番茄红 */
+  --color-short-break: #2a9d8f;  /* 短休息：翠绿色 */
+  --color-long-break: #457b9d;   /* 长休息：深海蓝 */
+  --bg: #f8f5f0;                 /* 页面底色（未直接使用，保留备用） */
+  --card-bg: #ffffff;            /* 卡片背景 */
+  --text: #2d3436;               /* 主文字色 */
+  --text-secondary: #636e72;     /* 辅助文字色 */
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);  /* 卡片投影 */
+  --radius: 20px;
+}
+
+/* 全局重置：统一盒模型，清除默认边距 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/*
+ * body：全屏居中布局
+ * 使用 flexbox 让卡片在视口中水平垂直居中
+ * background 用三重渐变模拟纸张纹理
+ * user-select: none 防止双击按钮时选中文字
+ */
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  background: linear-gradient(135deg, #fdf6e3 0%, #fef9ef 50%, #faf3e0 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  user-select: none;
+}
+
+/*
+ * 主卡片容器
+ * 白色圆角卡片，限定宽度 380px，移动端自动缩小到 95vw
+ */
+.container {
+  background: var(--card-bg);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  padding: 40px 36px 32px;
+  text-align: center;
+  width: 380px;
+  max-width: 95vw;
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 28px;
+  letter-spacing: 0.5px;
+}
+
+/*
+ * ============================================================
+ * 环形计时器
+ * 核心思路：SVG 圆环 + 绝对定位的数字叠加层
+ * 进度通过改变 stroke-dashoffset 来实现：
+ *   - 初始 offset = 0（圆环完整显示）
+ *   - 随时间推移 offset 逐渐增大到周长值（圆环消失）
+ * 圆环被旋转 -90deg，使进度起点从 12 点钟方向开始
+ * ============================================================
+ */
+.timer-wrapper {
+  position: relative;         /* 作为数字叠加层的定位参考 */
+  width: 240px;
+  height: 240px;
+  margin: 0 auto 18px;
+}
+
+/*
+ * SVG 圆环
+ * transform: rotate(-90deg) 将起点从 3 点钟旋转到 12 点钟方向
+ * stroke-linecap: round 让线条端点变圆角
+ */
+.timer-ring {
+  transform: rotate(-90deg);
+  width: 240px;
+  height: 240px;
+}
+
+/* 背景圆环：浅灰色底圈，始终完整显示 */
+.timer-ring .bg-circle {
+  fill: none;
+  stroke: #e8e4df;
+  stroke-width: 10;
+}
+
+/*
+ * 进度圆环：覆盖在背景圈之上
+ * stroke-dasharray 设为周长值，stroke-dashoffset 控制可见长度
+ * offset = 0 时圆环完整；offset = 周长时圆环完全消失
+ * transition 让进度条平滑递减（0.9s），颜色切换更慢（0.4s）
+ */
+.timer-ring .progress-circle {
+  fill: none;
+  stroke: var(--color-work);
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.9s linear, stroke 0.4s ease;
+}
+
+/*
+ * 数字叠加层：绝对定位在圆环正中央
+ * 用 flex 列布局垂直居中显示倒计时和阶段标签
+ */
+.timer-display {
+  position: absolute;
+  inset: 0;                  /* 等同 top/right/bottom/left: 0 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * font-variant-numeric: tabular-nums 确保数字等宽
+ * 这样时间从 "25:00" 变到 "24:59" 时数字不会左右晃动
+ */
+.timer-time {
+  font-size: 3.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.timer-label {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  letter-spacing: 1px;
+}
+
+/*
+ * ============================================================
+ * 番茄计数区
+ * 4 个圆点表示当前周期内的进度，实心 = 已完成
+ * 每完成 4 个番茄触发一次长休息
+ * ============================================================
+ */
+.counter-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.tomato-dots {
+  display: flex;
+  gap: 6px;
+}
+
+/* 空心圆点：红色边框 + 透明背景 = 未完成的番茄 */
+.tomato-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #e63946;
+  background: transparent;
+  transition: background 0.3s, transform 0.3s;
+}
+
+/* 实心圆点：红色填充 + 放大效果 = 已完成的番茄 */
+.tomato-dot.filled {
+  background: #e63946;
+  transform: scale(1.1);
+}
+
+/*
+ * ============================================================
+ * 按钮样式
+ * ============================================================
+ */
+.buttons {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.btn {
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 12px 32px;
+  border-radius: 50px;         /* 胶囊形按钮 */
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;   /* hover/active 状态平滑过渡 */
+  font-family: inherit;
+  outline: none;
+}
+
+/* 点击时按钮微微缩小，提供按压反馈 */
+.btn:active {
+  transform: scale(0.96);
+}
+
+/* 开始按钮：番茄红色 + 红色光晕阴影 */
+.btn-start {
+  background: var(--color-work);
+  color: #fff;
+  min-width: 120px;
+  box-shadow: 0 4px 14px rgba(230,57,70,0.3);
+}
+
+.btn-start:hover {
+  background: #d6333f;
+  box-shadow: 0 6px 20px rgba(230,57,70,0.4);
+}
+
+/* 计时运行时按钮变橙色，区分"开始"和"暂停"两种状态 */
+.btn-start.is-running {
+  background: #f4a261;
+  box-shadow: 0 4px 14px rgba(244,162,97,0.3);
+}
+
+.btn-start.is-running:hover {
+  background: #e09148;
+}
+
+/* 重置按钮：低饱和的米灰色，弱化视觉权重 */
+.btn-reset {
+  background: #f0ece6;
+  color: var(--text-secondary);
+  min-width: 100px;
+}
+
+.btn-reset:hover {
+  background: #e4dfd7;
+  color: var(--text);
+}
+
+/*
+ * ============================================================
+ * 设置面板
+ * 默认隐藏（display: none），点击"⚙ 设置"按钮展开
+ * ============================================================
+ */
+.settings-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  border-radius: 20px;
+  transition: all 0.2s;
+  font-family: inherit;
+  outline: none;
+}
+
+.settings-toggle:hover {
+  background: #f0ece6;
+  color: var(--text);
+}
+
+/* 设置面板：默认 display: none，通过 .open 类来控制显隐 */
+.settings-panel {
+  margin-top: 14px;
+  padding: 16px 20px;
+  background: #f8f6f2;
+  border-radius: 14px;
+  display: none;
+}
+
+.settings-panel.open {
+  display: block;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.settings-row:last-child {
+  margin-bottom: 0;
+}
+
+.settings-row label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* 数字输入框：小尺寸，居中显示 */
+.settings-row input {
+  width: 56px;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.settings-row input:focus {
+  border-color: var(--color-work);
+}
+
+/*
+ * ============================================================
+ * 计时完成遮罩层
+ * 计时归零时弹出，提示用户当前阶段已完成
+ * 使用 CSS 动画 fadeIn/popIn 实现弹入效果
+ * ============================================================
+ */
+.overlay {
+  position: fixed;
+  inset: 0;                         /* 铺满全屏 */
+  background: rgba(0,0,0,0.3);      /* 半透明遮罩 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;                     /* 确保在最上层 */
+  animation: fadeIn 0.3s ease;
+}
+
+.overlay.hidden {
+  display: none;                    /* 用 hidden 类控制显隐 */
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.overlay-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 32px 36px;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+  animation: popIn 0.35s ease;      /* 卡片弹入动画 */
+}
+
+@keyframes popIn {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.overlay-card h2 {
+  font-size: 1.4rem;
+  margin-bottom: 6px;
+}
+
+.overlay-card p {
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+  font-size: 0.95rem;
+}
+
+.overlay-card .btn {
+  min-width: auto;
+  padding: 10px 28px;
+}
+</style>
+</head>
+<!--
+  ============================================================
+  HTML 结构说明
+  ============================================================
+  页面分为三层：
+    1. 主卡片 (.container)：包含所有交互元素
+       - 环形计时器 (SVG + 数字叠加)
+       - 番茄计数圆点（4 个一组，实心表示已完成）
+       - 开始/暂停按钮 + 重置按钮
+       - 可折叠的设置面板
+    2. 完成遮罩层 (.overlay)：计时归零时弹出，提示用户
+    3. 内联 <script>：全部 JS 逻辑
+
+  SVG 环形进度原理：
+    - 两个 <circle> 重叠：底部灰色 bg-circle + 顶部彩色 progress-circle
+    - 圆半径 r=110，圆心 (120,120)，周长 = 2π×110 ≈ 691.15
+    - progress-circle 的 stroke-dasharray 设为周长值
+    - 通过改变 stroke-dashoffset 控制进度条可见长度
+    - offset=0 表示圆环完整，offset=周长 表示圆环完全消失
+  ============================================================
+-->
+<body>
+
+<div class="container">
+  <h1>🍅 Pomodoro 番茄钟</h1>
+
+  <!-- 环形计时器区域 -->
+  <div class="timer-wrapper" id="timerWrapper">
+    <!--
+      SVG 圆环 viewBox="0 0 240 240"
+      两个圆完全重叠，progress 覆盖在 bg 上面绘制
+      圆环被旋转 -90deg，让起点从 12 点钟位置开始
+    -->
+    <svg class="timer-ring" viewBox="0 0 240 240">
+      <circle class="bg-circle" cx="120" cy="120" r="110"/>
+      <circle class="progress-circle" id="progressCircle" cx="120" cy="120" r="110"/>
+    </svg>
+    <!-- 数字倒计时 + 阶段标签，绝对定位在圆环中央 -->
+    <div class="timer-display">
+      <span class="timer-time" id="timerTime">25:00</span>
+      <span class="timer-label" id="timerLabel">工作中</span>
+    </div>
+  </div>
+
+  <!-- 番茄计数：4 个圆点 + 数字，显示当前周期的进度 -->
+  <div class="counter-row">
+    <div class="tomato-dots" id="tomatoDots">
+      <span class="tomato-dot"></span>
+      <span class="tomato-dot"></span>
+      <span class="tomato-dot"></span>
+      <span class="tomato-dot"></span>
+    </div>
+    <span id="counterText">已完成: 0</span>
+  </div>
+
+  <!-- 操作按钮区 -->
+  <div class="buttons">
+    <button class="btn btn-start" id="btnStart" title="空格键">▶ 开始</button>
+    <button class="btn btn-reset" id="btnReset" title="Esc 键">↺ 重置</button>
+  </div>
+
+  <!--
+    设置按钮 + 可折叠面板
+    点击"⚙ 设置"切换 .open 类的显隐
+    默认 display: none，展开后 display: block
+  -->
+  <button class="settings-toggle" id="btnSettings">⚙ 设置</button>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-row">
+      <label>工作时长（分钟）</label>
+      <input type="number" id="workDuration" value="25" min="1" max="120">
+    </div>
+    <div class="settings-row">
+      <label>短休息（分钟）</label>
+      <input type="number" id="shortBreakDuration" value="5" min="1" max="60">
+    </div>
+    <div class="settings-row">
+      <label>长休息（分钟）</label>
+      <input type="number" id="longBreakDuration" value="15" min="1" max="120">
+    </div>
+    <div class="settings-row">
+      <label>长休息间隔（番茄数）</label>
+      <input type="number" id="longBreakInterval" value="4" min="1" max="10">
+    </div>
+  </div>
+</div>
+
+<!--
+  计时完成遮罩：position: fixed 铺满全屏
+  初始有 .hidden 类（display: none）
+  计时归零时移除 .hidden 类显示
+-->
+<div class="overlay hidden" id="overlay">
+  <div class="overlay-card">
+    <h2 id="overlayTitle">🎉 时间到！</h2>
+    <p id="overlayMsg">该休息一下了。</p>
+    <button class="btn btn-start" id="btnOverlayOk">知道了</button>
+  </div>
+</div>
+
+<script>
+/*
+ * ============================================================
+ * 一、常量定义
+ * ============================================================
+ */
+
+// SVG 圆环半径和周长（像素单位，基于 viewBox 0 0 240 240）
+// 周长 = 2πr ≈ 691.15，这是 stroke-dasharray 的基准值
+const RING_RADIUS = 110;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+/*
+ * 三种阶段的名称和颜色
+ * 颜色值与 CSS 变量保持一致
+ * JS 中通过 PHASES[currentPhase].color 动态修改 SVG 圆环颜色
+ */
+const PHASES = {
+  WORK:        { name: '工作中', color: '#e63946' },
+  SHORT_BREAK: { name: '短休息', color: '#2a9d8f' },
+  LONG_BREAK:  { name: '长休息', color: '#457b9d' },
+};
+
+/*
+ * ============================================================
+ * 二、DOM 元素引用
+ * 一次性获取所有需要操作的 DOM 节点，避免重复查询
+ * ============================================================
+ */
+const elTime = document.getElementById('timerTime');          // 倒计时数字 25:00
+const elLabel = document.getElementById('timerLabel');        // 阶段标签 "工作中"
+const elProgress = document.getElementById('progressCircle'); // SVG 进度圆环
+const elBtnStart = document.getElementById('btnStart');       // 开始/暂停按钮
+const elBtnReset = document.getElementById('btnReset');       // 重置按钮
+const elTomatoDots = document.getElementById('tomatoDots');   // 番茄圆点容器
+const elCounterText = document.getElementById('counterText'); // 番茄计数文字
+const elSettingsPanel = document.getElementById('settingsPanel'); // 设置面板
+const elOverlay = document.getElementById('overlay');         // 完成遮罩层
+const elOverlayTitle = document.getElementById('overlayTitle');
+const elOverlayMsg = document.getElementById('overlayMsg');
+const elBtnOverlayOk = document.getElementById('btnOverlayOk');
+const elTimerWrapper = document.getElementById('timerWrapper');
+
+/*
+ * ============================================================
+ * 三、核心状态变量
+ * ============================================================
+ *
+ * 状态机说明：
+ *   IDLE ──(点击开始)──> RUNNING ──(倒计时归零)──> IDLE（自动切换阶段）
+ *   RUNNING ──(点击暂停)──> PAUSED ──(点击开始)──> RUNNING
+ *   任意状态 ──(点击重置)──> IDLE（恢复当前阶段默认时长）
+ */
+
+let timerState = 'IDLE';       // 计时器状态：IDLE（空闲）| RUNNING（运行中）| PAUSED（已暂停）
+let currentPhase = 'WORK';     // 当前阶段：WORK | SHORT_BREAK | LONG_BREAK
+let remainingSeconds = 25 * 60; // 当前阶段剩余秒数
+let totalPhaseSeconds = 25 * 60; // 当前阶段总秒数（用于计算进度百分比）
+let pomodoroCount = 0;         // 累计完成的番茄总数（跨所有周期）
+let intervalId = null;         // setInterval 的返回值，用于清除定时器
+
+/*
+ * ============================================================
+ * 四、设置管理
+ * ============================================================
+ *
+ * 设置值从 DOM 输入框读取，同时通过 localStorage 持久化
+ * 修改设置后若计时器处于 IDLE 状态，立即应用新的时长
+ * 若计时器正在运行，设置仅保存，下次重置时生效
+ */
+
+/** 读取当前用户设置值，parseInt 的 || 提供默认值容错 */
+function getSettings() {
+  return {
+    work:           parseInt(elWorkDuration.value, 10) || 25,
+    shortBreak:     parseInt(elShortBreakDuration.value, 10) || 5,
+    longBreak:      parseInt(elLongBreakDuration.value, 10) || 15,
+    longInterval:   parseInt(elLongBreakInterval.value, 10) || 4,
+  };
+}
+
+/** 根据阶段名称返回对应的总秒数 */
+function getPhaseDuration(phase) {
+  const s = getSettings();
+  switch (phase) {
+    case 'WORK':        return s.work * 60;
+    case 'SHORT_BREAK': return s.shortBreak * 60;
+    case 'LONG_BREAK':  return s.longBreak * 60;
+    default:            return 25 * 60;
+  }
+}
+
+/*
+ * ============================================================
+ * 五、UI 更新函数
+ * ============================================================
+ *
+ * 数据流向：状态变量 → UI 更新函数 → DOM
+ * 所有对 DOM 的修改都通过这几个函数集中管理
+ * 保证界面展示与内部状态始终一致
+ */
+
+/** 将秒数格式化为 MM:SS 字符串，如 1500 → "25:00" */
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+/*
+ * 更新 SVG 环形进度条
+ * 原理：
+ *   stroke-dasharray = 周长（虚线模式：一段实线 + 一段间隙）
+ *   stroke-dashoffset = 周长 × (1 - 进度比例)
+ *   当 offset 增大时，实线部分被"推"出可见范围，视觉上圆环变短
+ *
+ * 示例：总时长 1500s，剩余 750s
+ *   fraction = 0.5
+ *   offset = 691.15 × 0.5 = 345.58
+ *   圆环只显示一半
+ */
+function updateRing(seconds, total) {
+  const fraction = total > 0 ? seconds / total : 0;
+  const offset = RING_CIRCUMFERENCE * (1 - fraction);
+  elProgress.setAttribute('stroke-dasharray', RING_CIRCUMFERENCE);
+  elProgress.setAttribute('stroke-dashoffset', offset);
+  elProgress.style.stroke = PHASES[currentPhase].color; // 随阶段切换颜色
+}
+
+/** 更新计时器区域：数字倒计时 + 阶段标签 + 进度环 + 页面标题 */
+function updateDisplay() {
+  elTime.textContent = formatTime(remainingSeconds);
+  elLabel.textContent = PHASES[currentPhase].name;
+  updateRing(remainingSeconds, totalPhaseSeconds);
+
+  // 页面标题动态更新，最小化到标签页也能看到剩余时间
+  document.title = formatTime(remainingSeconds) + ' - ' + PHASES[currentPhase].name + ' - 番茄钟';
+
+  elTimerWrapper.style.setProperty('--phase-color', PHASES[currentPhase].color);
+}
+
+/*
+ * 更新番茄圆点
+ * 4 个圆点代表当前周期进度，每完成一个番茄填实一个
+ * pomodoroCount % interval 得到当前周期内的索引（0-3）
+ * 例如 interval=4，完成 3 个番茄：索引 = 3%4 = 3，前 3 个圆点填实
+ */
+function updateTomatoDots() {
+  const interval = getSettings().longInterval;
+  const dots = elTomatoDots.querySelectorAll('.tomato-dot');
+  dots.forEach((dot, i) => {
+    const cycleIndex = pomodoroCount % interval;
+    if (i < cycleIndex) {
+      dot.classList.add('filled');
+    } else {
+      dot.classList.remove('filled');
+    }
+  });
+  elCounterText.textContent = '已完成: ' + pomodoroCount;
+}
+
+/** 同步按钮文字和样式：RUNNING 时显示"⏸ 暂停"并变橙色 */
+function updateButton() {
+  if (timerState === 'RUNNING') {
+    elBtnStart.textContent = '⏸ 暂停';
+    elBtnStart.classList.add('is-running');
+  } else {
+    elBtnStart.textContent = '▶ 开始';
+    elBtnStart.classList.remove('is-running');
+  }
+}
+
+/** 一次性刷新所有 UI 元素 */
+function refreshAllUI() {
+  updateDisplay();
+  updateTomatoDots();
+  updateButton();
+}
+
+/*
+ * ============================================================
+ * 六、计时器核心逻辑
+ * ============================================================
+ *
+ * 计时流程：
+ *   用户点击"开始" → startTimer() → setInterval(tick, 1000)
+ *   每秒 tick() 扣减 remainingSeconds 并更新 UI
+ *   remainingSeconds 归零时触发 onPhaseComplete()
+ *   onPhaseComplete() 根据规则切换阶段并暂停
+ */
+
+/** 每秒执行一次：扣减时间、更新 UI、检测是否完成 */
+function tick() {
+  if (remainingSeconds <= 0) return; // 安全守卫：已归零则不再扣减
+
+  remainingSeconds--;
+
+  /*
+   * 进度环过渡优化：
+   * 第一秒先禁用 transition 直接跳到正确位置，
+   * 然后强制回流（读取 offsetHeight）让浏览器立即渲染，
+   * 最后恢复 transition。后续每秒的 offset 变化都会平滑过渡。
+   * 如果不这样做，从"满环"开始的第一次变化会有延迟。
+   */
+  if (remainingSeconds === totalPhaseSeconds - 1) {
+    elProgress.style.transition = 'none';
+    updateRing(remainingSeconds, totalPhaseSeconds);
+    void elProgress.offsetHeight; // 强制回流，确保上面的修改立即生效
+    elProgress.style.transition = 'stroke-dashoffset 0.9s linear, stroke 0.4s ease';
+  } else {
+    updateRing(remainingSeconds, totalPhaseSeconds);
+  }
+
+  elTime.textContent = formatTime(remainingSeconds);
+  document.title = formatTime(remainingSeconds) + ' - ' + PHASES[currentPhase].name + ' - 番茄钟';
+
+  if (remainingSeconds <= 0) {
+    onPhaseComplete(); // 倒计时归零，触发阶段切换
+  }
+}
+
+/** 开始/继续计时 */
+function startTimer() {
+  if (timerState === 'RUNNING') return; // 已在运行，忽略
+
+  if (timerState === 'IDLE') {
+    // 全新开始：根据当前阶段重新计算总时长
+    totalPhaseSeconds = getPhaseDuration(currentPhase);
+    remainingSeconds = totalPhaseSeconds;
+  }
+  // PAUSED 状态：保留 remainingSeconds 继续扣减
+
+  timerState = 'RUNNING';
+  intervalId = setInterval(tick, 1000); // 每秒调用一次 tick
+  updateButton();                        // 按钮变为"暂停"
+}
+
+/** 暂停计时：清除 setInterval，保留 remainingSeconds 以便恢复 */
+function pauseTimer() {
+  if (timerState !== 'RUNNING') return;
+
+  timerState = 'PAUSED';
+  clearInterval(intervalId);
+  intervalId = null;
+  updateButton(); // 按钮变为"开始"
+}
+
+/** 重置当前阶段：回到当前阶段的初始时长，但不改变阶段和番茄计数 */
+function resetTimer() {
+  timerState = 'IDLE';
+  clearInterval(intervalId);
+  intervalId = null;
+
+  totalPhaseSeconds = getPhaseDuration(currentPhase);
+  remainingSeconds = totalPhaseSeconds;
+  // 重建过渡动画（先禁用再恢复，确保立即跳到满环状态）
+  elProgress.style.transition = 'none';
+  refreshAllUI();
+  void elProgress.offsetHeight;
+  elProgress.style.transition = 'stroke-dashoffset 0.9s linear, stroke 0.4s ease';
+}
+
+/** 完全重置：清空番茄计数，回到工作阶段 */
+function resetAll() {
+  if (pomodoroCount > 0 && !confirm('确定要重置番茄计数吗？')) return;
+  pomodoroCount = 0;
+  saveToLocal();      // 持久化到 localStorage
+  currentPhase = 'WORK';
+  resetTimer();
+}
+
+/*
+ * 阶段完成处理
+ *
+ * 分支逻辑：
+ *   当前是 WORK → 番茄计数 +1，根据 (总数 % 间隔 === 0) 决定进入短休息还是长休息
+ *   当前是 BREAK → 回到 WORK 阶段
+ *
+ * 通知和声音基于"刚完成的阶段"发送（completedPhase）
+ * 遮罩弹窗也基于"刚完成的阶段"显示对应文案
+ */
+function onPhaseComplete() {
+  clearInterval(intervalId);
+  intervalId = null;
+  timerState = 'IDLE';
+
+  // 保存刚完成的阶段名，用于后续弹窗文案判断
+  const completedPhase = currentPhase;
+
+  playSound();        // 播放三连提示音
+  showNotification(); // 弹出浏览器桌面通知（此时 currentPhase 还是旧阶段）
+
+  if (currentPhase === 'WORK') {
+    // 完成一个番茄：计数 +1，持久化
+    pomodoroCount++;
+    saveToLocal();
+    const interval = getSettings().longInterval;
+    // 每 interval 个番茄触发长休息，其余触发短休息
+    currentPhase = (pomodoroCount % interval === 0) ? 'LONG_BREAK' : 'SHORT_BREAK';
+  } else {
+    // 休息结束 → 回到工作中
+    currentPhase = 'WORK';
+  }
+
+  // 为下一阶段准备时长
+  totalPhaseSeconds = getPhaseDuration(currentPhase);
+  remainingSeconds = totalPhaseSeconds;
+
+  // 根据刚完成的阶段显示对应的弹窗文案
+  const overlays = {
+    WORK:        { title: '🎉 时间到！', msg: '该休息一下了。' },
+    SHORT_BREAK: { title: '☕ 休息结束！', msg: '准备开始新的番茄。' },
+    LONG_BREAK:  { title: '💪 长休息结束！', msg: '准备开始新一轮番茄工作。' },
+  };
+  showCompletionOverlay(overlays[completedPhase]);
+
+  // 进度环立即跳回满环状态（下一阶段刚开始）
+  elProgress.style.transition = 'none';
+  refreshAllUI();
+  void elProgress.offsetHeight;
+  elProgress.style.transition = 'stroke-dashoffset 0.9s linear, stroke 0.4s ease';
+}
+
+/*
+ * ============================================================
+ * 七、提示音（Web Audio API）
+ * ============================================================
+ *
+ * 用 OscillatorNode 生成三个依次播放的正弦波音符（A5-C#6-E6）
+ * 每个音符持续约 0.3 秒，间隔 0.15 秒
+ * gain.exponentialRampToValueAtTime 实现音量指数衰减（自然消退感）
+ *
+ * 为什么不用 <audio> 标签？
+ *   避免外部音频文件依赖，零资源、纯代码生成
+ * try/catch 包裹以兼容不支持 Web Audio 的环境（如旧浏览器）
+ */
+function playSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [880, 1100, 1320]; // 频率(Hz)：A5, C#6, E6 — 大三和弦
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();   // 振荡器：生成音频信号
+      const gain = ctx.createGain();        // 增益节点：控制音量
+      osc.type = 'sine';                    // 正弦波，声音纯净柔和
+      osc.frequency.value = freq;           // 设置音高
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.15);       // 起始音量 25%
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3); // 衰减到 1%
+      osc.connect(gain);
+      gain.connect(ctx.destination);        // 连接到扬声器
+      osc.start(ctx.currentTime + i * 0.15);
+      osc.stop(ctx.currentTime + i * 0.15 + 0.35);
+    });
+  } catch (e) {
+    // 音频不支持时静默跳过，不影响主功能
+  }
+}
+
+/*
+ * ============================================================
+ * 八、桌面通知（Notification API）
+ * ============================================================
+ *
+ * 首次调用时浏览器弹出权限请求
+ * 用户同意后，计时结束时在系统通知栏显示提示
+ * 即使浏览器最小化也能收到通知
+ */
+function showNotification() {
+  if (!('Notification' in window)) return; // 浏览器不支持则不处理
+
+  if (Notification.permission === 'granted') {
+    sendNotify(); // 已有权限，直接发送
+  } else if (Notification.permission === 'default') {
+    // 首次使用，请求权限
+    Notification.requestPermission().then(perm => {
+      if (perm === 'granted') sendNotify();
+    });
+  }
+  // permission === 'denied' 时不做任何操作
+}
+
+/** 根据当前阶段（刚完成的那个阶段）发送对应通知文案 */
+function sendNotify() {
+  const msgs = {
+    WORK:        { body: '太棒了！休息一下吧 ☕', icon: '🍅' },
+    SHORT_BREAK: { body: '休息结束，开始新的番茄吧 💪', icon: '🍅' },
+    LONG_BREAK:  { body: '长休息结束，新一轮开始！🎯', icon: '🍅' },
+  };
+  const m = msgs[currentPhase] || { body: '时间到！', icon: '🍅' };
+  new Notification('番茄钟 - ' + PHASES[currentPhase].name + '完成', { body: m.body });
+}
+
+/*
+ * ============================================================
+ * 九、完成遮罩弹窗
+ * ============================================================
+ *
+ * 全屏半透明遮罩 + 居中卡片，用户点击"知道了"关闭
+ * 同时计时器已自动切换到下一阶段，用户关闭遮罩后可立即开始
+ */
+
+/** 显示完成弹窗：更新标题和文案，移除 .hidden 类 */
+function showCompletionOverlay({ title, msg }) {
+  elOverlayTitle.textContent = title;
+  elOverlayMsg.textContent = msg;
+  elOverlay.classList.remove('hidden');
+}
+
+/** 隐藏完成弹窗：添加 .hidden 类（display: none） */
+function hideOverlay() {
+  elOverlay.classList.add('hidden');
+}
+
+/*
+ * ============================================================
+ * 十、localStorage 持久化
+ * ============================================================
+ *
+ * 保存内容：番茄总数 + 用户设置（时长、间隔）
+ * 不保存：当前计时器运行状态（页面刷新后总是从空闲开始）
+ *
+ * 存储键名：'pomodoro-timer'
+ * 存储格式：JSON 字符串
+ * try/catch 保护：防止隐私模式、存储满等异常场景
+ */
+
+/** 将番茄计数和设置写回 localStorage */
+function saveToLocal() {
+  const data = {
+    pomodoroCount,
+    settings: getSettings(),
+  };
+  try {
+    localStorage.setItem('pomodoro-timer', JSON.stringify(data));
+  } catch (e) { /* 存储满或隐私模式，静默跳过 */ }
+}
+
+/** 页面初始化时从 localStorage 恢复番茄计数和设置 */
+function loadFromLocal() {
+  try {
+    const raw = localStorage.getItem('pomodoro-timer');
+    if (!raw) return; // 首次访问，没有历史数据
+    const data = JSON.parse(raw);
+    if (typeof data.pomodoroCount === 'number') {
+      pomodoroCount = data.pomodoroCount;
+    }
+    if (data.settings) {
+      // 恢复设置值，|| 提供默认值容错
+      elWorkDuration.value = data.settings.work || 25;
+      elShortBreakDuration.value = data.settings.shortBreak || 5;
+      elLongBreakDuration.value = data.settings.longBreak || 15;
+      elLongBreakInterval.value = data.settings.longInterval || 4;
+    }
+  } catch (e) { /* JSON 损坏或格式不符，忽略并保持默认 */ }
+}
+
+/*
+ * ============================================================
+ * 十一、设置面板 UI
+ * ============================================================
+ */
+
+// 设置相关的输入框 DOM 引用（放在函数外部以便复用）
+const elWorkDuration = document.getElementById('workDuration');
+const elShortBreakDuration = document.getElementById('shortBreakDuration');
+const elLongBreakDuration = document.getElementById('longBreakDuration');
+const elLongBreakInterval = document.getElementById('longBreakInterval');
+
+/** 切换设置面板的展开/折叠 */
+function toggleSettings() {
+  elSettingsPanel.classList.toggle('open');
+}
+
+/*
+ * 设置变更回调
+ * 设计决策：计时器非 IDLE 时不立即生效，仅在下次重置后应用
+ * 这样避免"边计时边改时长"导致的歧义
+ */
+function onSettingsChange() {
+  if (timerState !== 'IDLE') {
+    return; // 计时中或暂停中，不生效，仅保存
+  }
+  // 空闲状态下立即刷新显示
+  totalPhaseSeconds = getPhaseDuration(currentPhase);
+  remainingSeconds = totalPhaseSeconds;
+  saveToLocal();
+  elProgress.style.transition = 'none';
+  refreshAllUI();
+  void elProgress.offsetHeight;
+  elProgress.style.transition = 'stroke-dashoffset 0.9s linear, stroke 0.4s ease';
+}
+
+/*
+ * ============================================================
+ * 十二、键盘快捷键
+ * ============================================================
+ *
+ * 空格键：开始/暂停切换（等效点击主按钮）
+ * Esc 键：重置当前阶段
+ *
+ * e.target.tagName === 'INPUT' 检查防止在设置输入框内误触
+ * e.preventDefault() 防止空格键滚动页面
+ */
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return; // 输入框中不响应快捷键
+
+  switch (e.code) {
+    case 'Space':
+      e.preventDefault();
+      if (timerState === 'RUNNING') {
+        pauseTimer();
+      } else {
+        startTimer();
+      }
+      break;
+    case 'Escape':
+      e.preventDefault();
+      resetTimer();
+      break;
+  }
+});
+
+/*
+ * ============================================================
+ * 十三、关闭前确认
+ * ============================================================
+ *
+ * 计时器正在运行或暂停时，关闭/刷新页面会弹出浏览器确认框
+ * 防止误关闭导致丢失当前进度
+ * IDLE 状态不拦截，直接关闭
+ */
+window.addEventListener('beforeunload', (e) => {
+  if (timerState === 'RUNNING' || timerState === 'PAUSED') {
+    e.preventDefault();
+    e.returnValue = '番茄钟还在运行中，确定要离开吗？';
+    return e.returnValue;
+  }
+});
+
+/*
+ * ============================================================
+ * 十四、初始化入口
+ * ============================================================
+ *
+ * 执行顺序：
+ *   1. 初始化 SVG 圆环属性
+ *   2. 从 localStorage 恢复历史数据
+ *   3. 设置初始阶段为 WORK，显示 25:00
+ *   4. 绑定所有事件监听器
+ */
+function init() {
+  // 初始化进度圆环：设置 dasharray，offset=0 表示完整圆环
+  elProgress.setAttribute('stroke-dasharray', RING_CIRCUMFERENCE);
+  elProgress.setAttribute('stroke-dashoffset', '0');
+
+  loadFromLocal(); // 恢复番茄计数和设置
+  totalPhaseSeconds = getPhaseDuration('WORK');
+  remainingSeconds = totalPhaseSeconds;
+  currentPhase = 'WORK';
+  refreshAllUI();  // 首次渲染
+
+  // 绑定按钮点击事件
+  elBtnStart.addEventListener('click', () => {
+    if (timerState === 'RUNNING') {
+      pauseTimer();
+    } else {
+      startTimer();
+    }
+  });
+  elBtnReset.addEventListener('click', resetAll);
+  elBtnOverlayOk.addEventListener('click', hideOverlay);
+  document.getElementById('btnSettings').addEventListener('click', toggleSettings);
+
+  // 设置面板的四个输入框：值变更时触发 onSettingsChange
+  [elWorkDuration, elShortBreakDuration, elLongBreakDuration, elLongBreakInterval]
+    .forEach(el => el.addEventListener('change', onSettingsChange));
+}
+
+init(); // 启动应用
+</script>
+</body>
+</html>
