@@ -5,190 +5,187 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>番茄钟 - Pomodoro</title>
 <style>
-/*
- * ============================================================
- * CSS 变量（设计令牌）
- * 用 CSS 自定义属性统一管理颜色，方便后续扩展主题（如暗色模式）
- * ============================================================
- */
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=ZCOOL+KuaiLe&display=swap');
+
 :root {
-  --color-work: #e63946;        /* 工作中：番茄红 */
-  --color-short-break: #2a9d8f;  /* 短休息：翠绿色 */
-  --color-long-break: #457b9d;   /* 长休息：深海蓝 */
-  --bg: #f8f5f0;                 /* 页面底色（未直接使用，保留备用） */
-  --card-bg: #ffffff;            /* 卡片背景 */
-  --text: #2d3436;               /* 主文字色 */
-  --text-secondary: #636e72;     /* 辅助文字色 */
-  --shadow: 0 4px 24px rgba(0,0,0,0.08);  /* 卡片投影 */
-  --radius: 20px;
+  --color-work: #FF6B6B;
+  --color-short-break: #4ECDC4;
+  --color-long-break: #45B7D1;
+  --bg: #FFF8F0;
+  --card-bg: #FFFFFF;
+  --text: #2D3436;
+  --text-secondary: #8B7E74;
+  --accent-yellow: #FFE66D;
+  --accent-pink: #FF8A80;
+  --accent-mint: #A8E6CF;
+  --shadow: 0 8px 32px rgba(255,107,107,0.12);
+  --radius: 24px;
 }
 
-/* 全局重置：统一盒模型，清除默认边距 */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-/*
- * body：全屏居中布局
- * 使用 flexbox 让卡片在视口中水平垂直居中
- * background 用三重渐变模拟纸张纹理
- * user-select: none 防止双击按钮时选中文字
- */
 body {
-  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-  background: linear-gradient(135deg, #fdf6e3 0%, #fef9ef 50%, #faf3e0 100%);
+  font-family: "ZCOOL KuaiLe", "Fredoka", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(160deg, #FFF5EE 0%, #FFF0F5 30%, #F0F8FF 60%, #FFF5EE 100%);
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text);
   user-select: none;
+  overflow-x: hidden;
 }
 
-/*
- * 主卡片容器
- * 白色圆角卡片，限定宽度 380px，移动端自动缩小到 95vw
- */
+/* 浮动背景装饰 */
+.bg-deco {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.bg-deco span {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.25;
+  animation: floatUp linear infinite;
+}
+.bg-deco span:nth-child(1) { width:120px; height:120px; background:var(--accent-pink); left:5%; bottom:-140px; animation-duration:18s; animation-delay:0s; }
+.bg-deco span:nth-child(2) { width:80px; height:80px; background:var(--accent-yellow); left:15%; bottom:-100px; animation-duration:14s; animation-delay:3s; }
+.bg-deco span:nth-child(3) { width:100px; height:100px; background:var(--color-short-break); left:70%; bottom:-120px; animation-duration:20s; animation-delay:6s; }
+.bg-deco span:nth-child(4) { width:60px; height:60px; background:var(--accent-mint); left:85%; bottom:-80px; animation-duration:12s; animation-delay:2s; }
+.bg-deco span:nth-child(5) { width:90px; height:90px; background:var(--color-long-break); left:40%; bottom:-110px; animation-duration:16s; animation-delay:9s; }
+.bg-deco span:nth-child(6) { width:70px; height:70px; background:var(--accent-pink); left:55%; bottom:-90px; animation-duration:15s; animation-delay:5s; }
+
+@keyframes floatUp {
+  0% { transform: translateY(0) rotate(0deg) scale(1); opacity: 0.25; }
+  50% { opacity: 0.12; }
+  100% { transform: translateY(-110vh) rotate(360deg) scale(0.3); opacity: 0; }
+}
+
 .container {
   background: var(--card-bg);
-  border-radius: 28px;
-  box-shadow: var(--shadow);
+  border-radius: 32px;
+  box-shadow: 0 4px 40px rgba(255,107,107,0.08), 0 12px 60px rgba(69,183,209,0.06);
   padding: 40px 36px 32px;
   text-align: center;
-  width: 380px;
+  width: 400px;
   max-width: 95vw;
+  position: relative;
+  z-index: 1;
+  border: 2px solid rgba(255,107,107,0.08);
+  transition: box-shadow 0.6s ease, border-color 0.6s ease;
 }
 
 h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 28px;
-  letter-spacing: 0.5px;
+  font-family: "ZCOOL KuaiLe", "Fredoka", sans-serif;
+  font-size: 1.6rem;
+  font-weight: 400;
+  margin-bottom: 6px;
+  letter-spacing: 1px;
+  color: var(--color-work);
+}
+h1 + .subtitle {
+  font-family: "Fredoka", "ZCOOL KuaiLe", sans-serif;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
-/*
- * ============================================================
- * 环形计时器
- * 核心思路：SVG 圆环 + 绝对定位的数字叠加层
- * 进度通过改变 stroke-dashoffset 来实现：
- *   - 初始 offset = 0（圆环完整显示）
- *   - 随时间推移 offset 逐渐增大到周长值（圆环消失）
- * 圆环被旋转 -90deg，使进度起点从 12 点钟方向开始
- * ============================================================
- */
 .timer-wrapper {
-  position: relative;         /* 作为数字叠加层的定位参考 */
+  position: relative;
   width: 240px;
   height: 240px;
-  margin: 0 auto 18px;
+  margin: 0 auto 20px;
 }
 
-/*
- * SVG 圆环
- * transform: rotate(-90deg) 将起点从 3 点钟旋转到 12 点钟方向
- * stroke-linecap: round 让线条端点变圆角
- */
 .timer-ring {
   transform: rotate(-90deg);
   width: 240px;
   height: 240px;
+  filter: drop-shadow(0 4px 12px rgba(255,107,107,0.15));
+  transition: filter 0.6s ease;
 }
 
-/* 背景圆环：浅灰色底圈，始终完整显示 */
 .timer-ring .bg-circle {
   fill: none;
-  stroke: #e8e4df;
-  stroke-width: 10;
+  stroke: #F0EBE3;
+  stroke-width: 12;
 }
 
-/*
- * 进度圆环：覆盖在背景圈之上
- * stroke-dasharray 设为周长值，stroke-dashoffset 控制可见长度
- * offset = 0 时圆环完整；offset = 周长时圆环完全消失
- * transition 让进度条平滑递减（0.9s），颜色切换更慢（0.4s）
- */
 .timer-ring .progress-circle {
   fill: none;
   stroke: var(--color-work);
-  stroke-width: 10;
+  stroke-width: 12;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.9s linear, stroke 0.4s ease;
 }
 
-/*
- * 数字叠加层：绝对定位在圆环正中央
- * 用 flex 列布局垂直居中显示倒计时和阶段标签
- */
 .timer-display {
   position: absolute;
-  inset: 0;                  /* 等同 top/right/bottom/left: 0 */
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-/*
- * font-variant-numeric: tabular-nums 确保数字等宽
- * 这样时间从 "25:00" 变到 "24:59" 时数字不会左右晃动
- */
 .timer-time {
-  font-size: 3.2rem;
+  font-family: "Fredoka", "ZCOOL KuaiLe", sans-serif;
+  font-size: 3.6rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
   line-height: 1;
   color: var(--text);
 }
 
 .timer-label {
-  font-size: 0.95rem;
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: 1rem;
   color: var(--text-secondary);
-  margin-top: 6px;
-  letter-spacing: 1px;
+  margin-top: 8px;
+  letter-spacing: 2px;
 }
 
-/*
- * ============================================================
- * 番茄计数区
- * 4 个圆点表示当前周期内的进度，实心 = 已完成
- * 每完成 4 个番茄触发一次长休息
- * ============================================================
- */
 .counter-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 24px;
   font-size: 0.9rem;
   color: var(--text-secondary);
 }
 
-.tomato-dots {
-  display: flex;
-  gap: 6px;
-}
+.tomato-dots { display: flex; gap: 8px; }
 
-/* 空心圆点：红色边框 + 透明背景 = 未完成的番茄 */
 .tomato-dot {
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  border: 2px solid #e63946;
+  border: 2.5px solid var(--accent-pink);
   background: transparent;
-  transition: background 0.3s, transform 0.3s;
+  transition: all 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+  position: relative;
 }
 
-/* 实心圆点：红色填充 + 放大效果 = 已完成的番茄 */
 .tomato-dot.filled {
-  background: #e63946;
-  transform: scale(1.1);
+  background: var(--color-work);
+  border-color: var(--color-work);
+  transform: scale(1.15);
+  box-shadow: 0 2px 8px rgba(255,107,107,0.35);
+  animation: dotPop 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
 }
 
-/*
- * ============================================================
- * 按钮样式
- * ============================================================
- */
+@keyframes dotPop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.45); }
+  100% { transform: scale(1.15); }
+}
+
 .buttons {
   display: flex;
   gap: 14px;
@@ -199,147 +196,126 @@ h1 {
 .btn {
   border: none;
   cursor: pointer;
-  font-size: 1rem;
-  font-weight: 600;
-  padding: 12px 32px;
-  border-radius: 50px;         /* 胶囊形按钮 */
-  letter-spacing: 0.5px;
-  transition: all 0.2s ease;   /* hover/active 状态平滑过渡 */
-  font-family: inherit;
+  font-family: "ZCOOL KuaiLe", "Fredoka", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 400;
+  padding: 14px 36px;
+  border-radius: 50px;
+  letter-spacing: 1px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   outline: none;
+  position: relative;
+  top: 0;
 }
+.btn:hover { transform: translateY(-3px); }
+.btn:active { transform: scale(0.94) translateY(0); }
 
-/* 点击时按钮微微缩小，提供按压反馈 */
-.btn:active {
-  transform: scale(0.96);
-}
-
-/* 开始按钮：番茄红色 + 红色光晕阴影 */
 .btn-start {
   background: var(--color-work);
   color: #fff;
-  min-width: 120px;
-  box-shadow: 0 4px 14px rgba(230,57,70,0.3);
+  min-width: 130px;
+  box-shadow: 0 6px 20px rgba(255,107,107,0.35);
+  font-size: 1.1rem;
 }
-
 .btn-start:hover {
-  background: #d6333f;
-  box-shadow: 0 6px 20px rgba(230,57,70,0.4);
+  background: #FF5252;
+  box-shadow: 0 10px 28px rgba(255,107,107,0.45);
 }
 
-/* 计时运行时按钮变橙色，区分"开始"和"暂停"两种状态 */
 .btn-start.is-running {
-  background: #f4a261;
-  box-shadow: 0 4px 14px rgba(244,162,97,0.3);
+  background: var(--accent-yellow);
+  color: #5D4E37;
+  box-shadow: 0 6px 20px rgba(255,230,109,0.4);
 }
-
 .btn-start.is-running:hover {
-  background: #e09148;
+  background: #FFE04D;
+  box-shadow: 0 10px 28px rgba(255,230,109,0.5);
 }
 
-/* 重置按钮：低饱和的米灰色，弱化视觉权重 */
 .btn-reset {
-  background: #f0ece6;
+  background: #F5F0EB;
   color: var(--text-secondary);
-  min-width: 100px;
+  min-width: 110px;
 }
-
 .btn-reset:hover {
-  background: #e4dfd7;
+  background: #EBE5DE;
   color: var(--text);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
 }
 
-/*
- * ============================================================
- * 设置面板
- * 默认隐藏（display: none），点击"⚙ 设置"按钮展开
- * ============================================================
- */
 .settings-toggle {
   background: none;
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.85rem;
-  padding: 6px 12px;
+  font-size: 0.88rem;
+  padding: 8px 16px;
   border-radius: 20px;
-  transition: all 0.2s;
-  font-family: inherit;
+  transition: all 0.25s;
+  font-family: "ZCOOL KuaiLe", sans-serif;
   outline: none;
+  letter-spacing: 1px;
 }
-
 .settings-toggle:hover {
-  background: #f0ece6;
-  color: var(--text);
+  background: #FFF0EB;
+  color: var(--color-work);
 }
 
-/* 设置面板：默认 display: none，通过 .open 类来控制显隐 */
 .settings-panel {
   margin-top: 14px;
-  padding: 16px 20px;
-  background: #f8f6f2;
-  border-radius: 14px;
+  padding: 18px 22px;
+  background: #FFFAF5;
+  border-radius: 18px;
   display: none;
+  border: 1px dashed rgba(255,107,107,0.2);
 }
-
-.settings-panel.open {
-  display: block;
-}
+.settings-panel.open { display: block; }
 
 .settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
-
-.settings-row:last-child {
-  margin-bottom: 0;
-}
+.settings-row:last-child { margin-bottom: 0; }
 
 .settings-row label {
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   color: var(--text-secondary);
+  font-family: "ZCOOL KuaiLe", sans-serif;
 }
 
-/* 数字输入框：小尺寸，居中显示 */
 .settings-row input {
-  width: 56px;
-  padding: 6px 8px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  width: 60px;
+  padding: 8px 10px;
+  border: 2px solid #F0EBE3;
+  border-radius: 12px;
   text-align: center;
-  font-size: 0.85rem;
-  font-family: inherit;
+  font-size: 0.9rem;
+  font-family: "Fredoka", sans-serif;
+  font-weight: 600;
   outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.25s;
+  background: #fff;
 }
-
 .settings-row input:focus {
   border-color: var(--color-work);
+  box-shadow: 0 0 0 3px rgba(255,107,107,0.1);
 }
 
-/*
- * ============================================================
- * 计时完成遮罩层
- * 计时归零时弹出，提示用户当前阶段已完成
- * 使用 CSS 动画 fadeIn/popIn 实现弹入效果
- * ============================================================
- */
+/* 完成遮罩 */
 .overlay {
   position: fixed;
-  inset: 0;                         /* 铺满全屏 */
-  background: rgba(0,0,0,0.3);      /* 半透明遮罩 */
+  inset: 0;
+  background: rgba(45,52,54,0.35);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;                     /* 确保在最上层 */
+  z-index: 100;
   animation: fadeIn 0.3s ease;
+  backdrop-filter: blur(4px);
 }
-
-.overlay.hidden {
-  display: none;                    /* 用 hidden 类控制显隐 */
-}
+.overlay.hidden { display: none; }
 
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -348,32 +324,54 @@ h1 {
 
 .overlay-card {
   background: #fff;
-  border-radius: 20px;
-  padding: 32px 36px;
+  border-radius: 28px;
+  padding: 36px 40px;
   text-align: center;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.15);
-  animation: popIn 0.35s ease;      /* 卡片弹入动画 */
+  box-shadow: 0 16px 60px rgba(255,107,107,0.2);
+  animation: bounceIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
 }
 
-@keyframes popIn {
-  from { transform: scale(0.85); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+@keyframes bounceIn {
+  from { transform: scale(0.8) translateY(20px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
 }
 
 .overlay-card h2 {
-  font-size: 1.4rem;
-  margin-bottom: 6px;
+  font-family: "ZCOOL KuaiLe", sans-serif;
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+  color: var(--color-work);
 }
-
 .overlay-card p {
   color: var(--text-secondary);
-  margin-bottom: 18px;
+  margin-bottom: 20px;
   font-size: 0.95rem;
 }
-
 .overlay-card .btn {
   min-width: auto;
-  padding: 10px 28px;
+  padding: 12px 32px;
+  font-size: 1rem;
+}
+
+/* 撒花粒子 */
+.confetti-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 200;
+}
+.confetti-piece {
+  position: absolute;
+  width: 10px;
+  height: 16px;
+  top: 40%;
+  border-radius: 3px;
+  animation: confettiFall 1.2s ease-out forwards;
+}
+@keyframes confettiFall {
+  0% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translateY(60vh) rotate(720deg) scale(0); opacity: 0; }
 }
 </style>
 </head>
@@ -400,8 +398,14 @@ h1 {
 -->
 <body>
 
+<!-- 浮动背景装饰 -->
+<div class="bg-deco">
+  <span></span><span></span><span></span><span></span><span></span><span></span>
+</div>
+
 <div class="container">
-  <h1>🍅 Pomodoro 番茄钟</h1>
+  <h1>🍅 番茄钟</h1>
+  <div class="subtitle">Pomodoro Timer</div>
 
   <!-- 环形计时器区域 -->
   <div class="timer-wrapper" id="timerWrapper">
@@ -470,10 +474,11 @@ h1 {
   计时归零时移除 .hidden 类显示
 -->
 <div class="overlay hidden" id="overlay">
+  <div class="confetti-container" id="confettiContainer"></div>
   <div class="overlay-card">
     <h2 id="overlayTitle">🎉 时间到！</h2>
     <p id="overlayMsg">该休息一下了。</p>
-    <button class="btn btn-start" id="btnOverlayOk">知道了</button>
+    <button class="btn btn-start" id="btnOverlayOk">知道啦</button>
   </div>
 </div>
 
@@ -877,11 +882,35 @@ function sendNotify() {
  * 同时计时器已自动切换到下一阶段，用户关闭遮罩后可立即开始
  */
 
+/** 撒花粒子：生成彩色纸屑从上方飘落 */
+function spawnConfetti() {
+  const container = document.getElementById('confettiContainer');
+  const colors = ['#FF6B6B','#FFE66D','#4ECDC4','#FF8A80','#45B7D1','#A8E6CF','#FFD93D'];
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < 60; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = Math.random() * 100 + '%';
+    piece.style.top = (Math.random() * 20 + 35) + '%';
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.animationDelay = Math.random() * 0.6 + 's';
+    piece.style.animationDuration = (Math.random() * 1 + 1) + 's';
+    piece.style.width = (Math.random() * 8 + 6) + 'px';
+    piece.style.height = (Math.random() * 12 + 8) + 'px';
+    piece.style.borderRadius = Math.random() > 0.5 ? '50%' : '3px';
+    frag.appendChild(piece);
+  }
+  container.appendChild(frag);
+  // 动画结束后清理
+  setTimeout(() => { container.innerHTML = ''; }, 1800);
+}
+
 /** 显示完成弹窗：更新标题和文案，移除 .hidden 类 */
 function showCompletionOverlay({ title, msg }) {
   elOverlayTitle.textContent = title;
   elOverlayMsg.textContent = msg;
   elOverlay.classList.remove('hidden');
+  spawnConfetti();
 }
 
 /** 隐藏完成弹窗：添加 .hidden 类（display: none） */
